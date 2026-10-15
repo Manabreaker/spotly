@@ -58,3 +58,13 @@ def test_five_photo_limit_and_corrupt_upload_preserve_draft(client):
     restored = client.get(f"/api/forms/{key}").json()
     assert restored["raw"]["title"] == "Не потерять"
     assert len(restored["photos"]) == 5
+
+
+def test_upload_does_not_claim_ownership_of_other_devices_text(client):
+    key, state = opened(client)
+    client.put(
+        f"/api/forms/{key}/draft", json=payload(state, {"title": "other device"}, "session-b")
+    )
+    result = upload(client, key, state).json()
+    assert result["last_session"] == "session-b"
+    assert result["raw"]["title"] == "other device"

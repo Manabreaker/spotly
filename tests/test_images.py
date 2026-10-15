@@ -55,3 +55,17 @@ def test_preview_resizes_without_modifying_original(tmp_path):
     assert Image.open(tmp_path / "out/preview.webp").size == (2560, 1707)
     assert Image.open(tmp_path / "out/thumbnail.webp").size == (512, 341)
     assert source.read_bytes() == original
+
+
+def test_heif_keeps_the_checked_primary_frame(tmp_path):
+    source = tmp_path / "multi.heic"
+    Image.new("RGB", (20, 10), "red").save(
+        source,
+        format="HEIF",
+        save_all=True,
+        append_images=[Image.new("RGB", (70, 40), "blue")],
+        primary_index=1,
+    )
+    result = convert_image(source, tmp_path / "out")
+    assert (result["width"], result["height"]) == (70, 40)
+    assert Image.open(tmp_path / "out/preview.webp").size == (70, 40)

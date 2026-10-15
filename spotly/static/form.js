@@ -1,4 +1,6 @@
 import {Telemetry} from "./telemetry.js";
+import {photoConflicts,recoveryCandidate,uploadOperation} from "./draft-state.js";
+const uploadOperations=new Map();
 const $=id=>document.getElementById(id), form=$("event-form"), key=$("app").dataset.key;
 const base="/api/forms/"+encodeURIComponent(key), localKey="spotly:draft:"+key;
 const fields=["title","description","date","time","timezone","hours","minutes","format","address",
@@ -32,6 +34,7 @@ function localDraft(value=raw()){
     $("save-status").textContent="Локальная копия недоступна; сохраняем на сервере";
   }
 }
+function pendingLabel(){savedLabel(dirty||savePromise?"Сохраняем…":"Сохранено");}
 function savedLabel(text,failed=false){$("save-status").textContent=text;$("save-status").classList.toggle("failed",failed);}
 function conditional(){
   const r=raw();
@@ -147,6 +150,10 @@ function adopt(next){
   if(next.attempt_id!==state.attempt_id||next.version>=state.version)state=next;
   drawPhotos();if(state.status==="completed")showSuccess();
 }
+function adoptPhoto(next){
+  if(photoConflicts(state,next,tm.session)){showConflict(next);return false;}
+  adopt(next);localDraft();pendingLabel();return true;
+}
 function showConflict(next){
   blocked=true;paused=true;conflictState=next;$("conflict").hidden=false;
   $("submit-button").disabled=true;savedLabel("Правки не отправлены: форма изменилась",true);
@@ -218,7 +225,7 @@ function drawPhotos(readonly=false,target=$("photos")){
 }
 async function photoMutation(path,method,extra={}){
   await saveNow();if(blocked||dirty)return;
-  try{const next=await request(path,method,{...body(),...extra});adopt(next);localDraft();savedLabel("Сохранено");}
+  try{const next=await request(path,method,{...body(),...extra});adoptPhoto(next);}
   catch(error){if(error.status===409)showConflict(error.data.state);else $("photo-error").textContent=error.message;}
 }
 function orderPhoto(from,to){
@@ -226,32 +233,51 @@ function orderPhoto(from,to){
   return photoMutation("/photos/order","PUT",{photo_ids:ids});
 }
 function deletePhoto(id){tm.emit("photo_remove_clicked",null,null,{photo_id:id});return photoMutation("/photos/"+id,"DELETE");}
+function queueUpload(operation){
+  uploadCount++;$("submit-button").disabled=true;
+  uploadChain=uploadChain.then(async()=>{
+    if(blocked){$("photo-error").textContent="Сначала выберите версию черновика";return;}
+    $("upload-status").textContent="Загружаем и обрабатываем "+operation.file.name+"…";
+    $("photo-error").textContent="";
+    const startedAt=performance.now(),data=new FormData();
+    data.append("file",operation.file);data.append("attempt_id",operation.attempt);
+    data.append("session_id",tm.session);data.append("upload_id",operation.id);
+    try{
+      const next=await request("/photos","POST",data,true);
+      uploadOperations.delete(operation.fingerprint);adoptPhoto(next);
+      tm.emit("photo_upload_success","photos",null,{name:operation.file.name,duration_ms:Math.round(performance.now()-startedAt)});
+    }catch(error){
+      tm.emit("photo_error","photos",null,{name:operation.file.name,status:error.status||"network"});
+      if(error.status===409&&error.data.state){showConflict(error.data.state);return;}
+      // An uncertain response may already have committed. Reconcile before retrying.
+      if(!error.status||error.status>=500){
+        try{
+          const next=await request("");
+          if(next.photos.some(p=>p.upload_id===operation.id)){
+            uploadOperations.delete(operation.fingerprint);adoptPhoto(next);return;
+          }
+        }catch{}
+        $("photo-error").textContent=operation.file.name+": результат загрузки пока неизвестен. ";
+        const retry=document.createElement("button");retry.type="button";retry.className="secondary";
+        retry.textContent="Повторить загрузку";retry.onclick=()=>{retry.disabled=true;queueUpload(operation);};
+        $("photo-error").append(retry);
+      }else{
+        uploadOperations.delete(operation.fingerprint);
+        $("photo-error").textContent=operation.file.name+": "+error.message;
+      }
+    }
+  }).finally(()=>{
+    uploadCount--;$("submit-button").disabled=uploadCount>0||blocked||submitting;
+    if(!uploadCount)$("upload-status").textContent=state.photos.length?"Загружено фотографий: "+state.photos.length:"";
+  });
+}
 function uploadFiles(files){
   for(const file of files){
     tm.emit("photo_selected","photos",null,{name:file.name,size:file.size,type:file.type});
     if(file.size>30000000){$("photo-error").textContent=file.name+": файл больше 30 МБ";
       tm.emit("photo_error","photos",null,{name:file.name,code:"file_size"});continue;}
-    uploadCount++;$("submit-button").disabled=true;
-    const uploadId=crypto.randomUUID();
-    uploadChain=uploadChain.then(async()=>{
-      if(state.photos.length>=5){$("photo-error").textContent="Можно добавить не больше пяти фотографий";return;}
-      $("upload-status").textContent="Загружаем и обрабатываем "+file.name+"…";
-      $("photo-error").textContent="";
-      const startedAt=performance.now(),data=new FormData();
-      data.append("file",file);data.append("attempt_id",state.attempt_id);
-      data.append("session_id",tm.session);data.append("upload_id",uploadId);
-      try{
-        const next=await request("/photos","POST",data,true);adopt(next);localDraft();
-        tm.emit("photo_upload_success","photos",null,{name:file.name,duration_ms:Math.round(performance.now()-startedAt)});
-      }catch(error){
-        $("photo-error").textContent=file.name+": "+error.message;
-        tm.emit("photo_error","photos",null,{name:file.name,status:error.status||"network"});
-        if(error.status===409&&error.data.state)showConflict(error.data.state);
-      }
-    }).finally(()=>{
-      uploadCount--;$("submit-button").disabled=uploadCount>0||blocked||submitting;
-      if(!uploadCount)$("upload-status").textContent=state.photos.length?"Загружено фотографий: "+state.photos.length:"";
-    });
+    const operation=uploadOperation(uploadOperations,file);operation.attempt=state.attempt_id;
+    queueUpload(operation);
   }
   $("photo-input").value="";
 }
@@ -361,6 +387,14 @@ function wire(){
   form.addEventListener("pointerdown",()=>tm.touch());
   form.addEventListener("keydown",()=>tm.touch());
   form.addEventListener("submit",submit);
+  $("use-local").onclick=()=>{
+    $("recovery").hidden=true;$("restore").hidden=true;
+    tm.emit("local_recovery_chosen");showForm(candidate);schedule(true);
+  };
+  $("use-server").onclick=()=>{
+    $("recovery").hidden=true;$("restore").hidden=true;
+    tm.emit("server_recovery_chosen");candidate=null;showForm(state.raw);localDraft();
+  };
   $("resume").onclick=()=>{tm.emit("draft_resumed");showForm(candidate||state.raw);if(candidate&&JSON.stringify(candidate)!==JSON.stringify(state.raw))schedule(true);};
   $("start-over").onclick=()=>{tm.emit("restart_requested");$("restart-dialog").showModal();};
   $("confirm-restart").onclick=restart;
@@ -387,8 +421,14 @@ async function boot(){
   try{
     state=await request("");tm=new Telemetry(key,state.attempt_id);wire();$("loading").hidden=true;
     let local;try{local=JSON.parse(localStorage.getItem(localKey)||"null");}catch{}
-    candidate=local?.attempt_id===state.attempt_id&&local.base_version===state.version?local.raw:null;
+    const recovery=recoveryCandidate(local,state);candidate=recovery?.raw||null;
     if(state.status==="completed"){showSuccess();return;}
+    if(recovery?.conflict){
+      $("recovery").hidden=false;
+      $("local-version").textContent=JSON.stringify(candidate,null,2);
+      $("server-version").textContent=JSON.stringify(state.raw,null,2);
+      tm.emit("local_recovery_conflict");return;
+    }
     if(state.saved_at||candidate){
       $("restore").hidden=false;tm.emit("restore_shown");
       const date=state.saved_at||local?.saved_at;

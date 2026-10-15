@@ -31,8 +31,9 @@ def convert_image(source, target):
                     "height": image.height,
                     "media_type": Image.MIME.get(image.format, "image/heic"),
                 }
-                image.seek(getattr(image, "primary_index", 0))
                 image.load()
+                if image.width * image.height > 100_000_000:
+                    raise ValueError("Размер больше 100 мегапикселей")
                 converted = ImageOps.exif_transpose(image)
                 profile = converted.info.get("icc_profile")
                 if profile:
@@ -69,7 +70,12 @@ def convert_image(source, target):
 
 if __name__ == "__main__":
     try:
+        # A failed decoder stays isolated from the web process. Enough for 100 MP.
+        if sys.platform == "linux":
+            import resource
+
+            resource.setrlimit(resource.RLIMIT_AS, (3 * 1024**3, 3 * 1024**3))
         print(json.dumps(convert_image(sys.argv[1], sys.argv[2])))
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, MemoryError) as exc:
         print(json.dumps({"error": str(exc)}))
         sys.exit(1)

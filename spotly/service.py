@@ -50,6 +50,7 @@ async def state_of(session, inv, attempt):
         photos=[
             dict(
                 id=p.id,
+                upload_id=p.upload_id,
                 name=p.name,
                 width=p.width,
                 height=p.height,
@@ -70,9 +71,10 @@ def stale(inv, attempt, body):
     )
 
 
-def mark_changed(inv, attempt, session_id):
+def mark_changed(inv, attempt, session_id, *, text_change=True):
     inv.version += 1
-    inv.last_session = session_id
+    if text_change:
+        inv.last_session = session_id
     attempt.saved_at = datetime.now(UTC)
     if attempt.started_at is None:
         attempt.started_at = attempt.saved_at

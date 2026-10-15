@@ -190,3 +190,21 @@ def test_research_identifies_participant_without_copying_access_key(client):
     key, state = opened(client)
     assert state["participant_id"] != key
     assert len(state["participant_id"]) == 64
+
+
+def test_cyrillic_telemetry_uses_utf8_size(client):
+    key, state = opened(client)
+    events = [
+        dict(
+            id=str(uuid4()),
+            attempt_id=state["attempt_id"],
+            session_id="a",
+            name="field_blur",
+            value="я" * 10000,
+            occurred_at="2026-10-15T12:00:00Z",
+        )
+        for _ in range(20)
+    ]
+    response = client.post(f"/api/forms/{key}/events", json={"events": events})
+    assert response.status_code == 200
+    assert response.json()["accepted"] == 20

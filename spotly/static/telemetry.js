@@ -5,7 +5,7 @@ export class Telemetry {
     this.queue=[]; this.sending=false; this.field=null; this.active=false;
     this.lastAction=performance.now(); this.lastCheckpoint=this.lastAction; this.visible=!document.hidden;
     this.origin=Date.now()-performance.now();
-    this.retry=0;
+    this.retry=0;this.batchLimit=100;
     this.timer=setInterval(()=>{this.checkpoint();this.flush();},5000);
     document.addEventListener("visibilitychange",()=>{
       this.checkpoint(); this.visible=!document.hidden; this.emit(document.hidden?"page_hidden":"page_visible");
@@ -52,16 +52,19 @@ export class Telemetry {
         let queue;
         try{queue=key===this.storageKey?this.queue:JSON.parse(localStorage.getItem(key)||"[]");}catch{continue;}
         if(!queue.length)continue;
-        const batch=[];let size=0;
+        const batch=[];let size=12;
         for(const item of queue){
           const bytes=new TextEncoder().encode(JSON.stringify(item)).length;
-          if(batch.length>=100 || size+bytes>(keepalive?50000:950000))break;
-          batch.push(item);size+=bytes;
+          if(batch.length>=this.batchLimit || size+bytes+1>(keepalive?50000:950000))break;
+          batch.push(item);size+=bytes+1;
         }
         if(!batch.length)continue;
         const response=await fetch("/api/forms/"+encodeURIComponent(this.key)+"/events",{
           method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({events:batch}),keepalive});
-        if(!response.ok)throw Error("events "+response.status);
+        if(!response.ok){
+          if(response.status===422&&batch.length>1)this.batchLimit=Math.max(1,Math.floor(batch.length/2));
+          throw Error("events "+response.status);
+        }
         const sent=new Set(batch.map(e=>e.id));
         if(key===this.storageKey){
           this.queue=this.queue.filter(e=>!sent.has(e.id));this.persist();

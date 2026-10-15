@@ -44,3 +44,17 @@ test("sends in-memory events when local storage cannot persist",async()=>{
   assert.equal(requests[0].events[0].name,"page_open");
   assert.equal(telemetry.queue.length,0);
 });
+
+test('oversized rejected batches split without dropping values',async()=>{
+  const {telemetry}=setup();
+  for(let i=0;i<19;i++)telemetry.emit('field_blur','description','я'.repeat(10000));
+  const requests=[];
+  globalThis.fetch=async(url,options)=>{requests.push(JSON.parse(options.body));return {ok:requests.length>1,status:422};};
+  telemetry.sending=false;
+  await telemetry.flush();
+  assert.equal(telemetry.queue.length,20);
+  await telemetry.flush();
+  assert.equal(requests[1].events.length,10);
+  assert.equal(telemetry.queue.length,10);
+  assert.equal(telemetry.queue[0].value.length,10000);
+});

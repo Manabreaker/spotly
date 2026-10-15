@@ -74,7 +74,16 @@ class Batch(BaseModel):
     @field_validator("events")
     @classmethod
     def bound_batch(cls, value):
-        if len(json.dumps([v.model_dump(mode="json") for v in value]).encode()) > 1000000:
+        if (
+            len(
+                json.dumps(
+                    {"events": [v.model_dump(mode="json") for v in value]},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
+            > 1000000
+        ):
             raise ValueError("batch too large")
         return value
 

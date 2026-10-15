@@ -122,7 +122,7 @@ async def upload_photo(
                     **info,
                 )
             )
-            mark_changed(inv, attempt, session_id)
+            mark_changed(inv, attempt, session_id, text_change=False)
             record(
                 session,
                 key,
@@ -154,7 +154,7 @@ async def reorder(key: str, body: Order, request: Request):
             raise HTTPException(422, "Обновите список фотографий")
         for p in photos:
             p.position = body.photo_ids.index(p.id)
-        mark_changed(inv, attempt, body.session_id)
+        mark_changed(inv, attempt, body.session_id, text_change=False)
         record(session, key, attempt.id, "photos_reordered", body.session_id, value=body.photo_ids)
         await session.flush()
         return await state_of(session, inv, attempt)
@@ -171,7 +171,7 @@ async def remove(key: str, photo_id: str, body: Change, request: Request):
         if not photo or photo.attempt_id != attempt.id:
             raise HTTPException(404, "Фотография не найдена")
         photo.active = False
-        mark_changed(inv, attempt, body.session_id)
+        mark_changed(inv, attempt, body.session_id, text_change=False)
         record(
             session,
             key,
