@@ -1,0 +1,8 @@
+[Unit]
+Description=Spotly database and photo backup
+Requires=docker.service
+After=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/spotly
+ExecStart=/usr/bin/bash /opt/spotly/scripts/backup.sh

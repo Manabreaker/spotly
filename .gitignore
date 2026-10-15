@@ -1,0 +1,12 @@
+.venv/
+.env
+data/
+.superpowers/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+.idea/
+.DS_Store
+coverage.xml
+.coverage

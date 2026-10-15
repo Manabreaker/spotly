@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+.idea
+.superpowers
+data
+tests
+docs
+__pycache__
+.pytest_cache
+.ruff_cache
+*.png

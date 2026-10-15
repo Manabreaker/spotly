@@ -1,0 +1,7 @@
+spotly.awkward-scarlet.ru {
+    encode zstd gzip
+    request_body {
+        max_size 32MB
+    }
+    reverse_proxy app:8000
+}
