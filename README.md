@@ -29,7 +29,7 @@ uv run ruff check spotly tests migrations
 uv run ruff format --check spotly tests migrations
 node --check spotly/static/form.js
 node --check spotly/static/telemetry.js
-node --test tests/test_telemetry.mjs
+node --test tests/*.mjs
 ```
 
 Без TEST_DATABASE_URL проверки PostgreSQL пропускаются; верификацией API такой запуск не является.
