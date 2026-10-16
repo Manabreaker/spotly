@@ -105,7 +105,7 @@ function validate(r){
   if(!["limited","unlimited"].includes(r.capacity_mode))e.capacity_mode="Укажите, ограничено ли количество мест";
   if(r.capacity_mode==="limited"&&(!/^\d{1,7}$/.test(r.capacity)||Number(r.capacity)<1||Number(r.capacity)>1000000))
     e.capacity="Укажите целое число мест от 1 до 1 000 000";
-  if(!validURL(r.registration_url))e.registration_url="Укажите корректную ссылку на регистрацию";
+  if(!validURL(r.registration_url))e.registration_url="Укажите корректную ссылку на регистрацию или профиль организатора";
   return e;
 }
 function clearErrors(){
@@ -295,7 +295,7 @@ function showSuccess(){
     [event.format==="offline"?"Адрес":"Подключение",event.format==="offline"?event.address:event.join_url||"Ссылка будет указана позже"],
     ["Участие",event.price_kopecks===0?"Бесплатно":(event.price_kopecks/100).toLocaleString("ru-RU",{minimumFractionDigits:2})+" ₽"],
     ["Количество участников",event.capacity===null?"Без ограничения":String(event.capacity)],
-    ["Регистрация",event.registration_url||"Ссылка на регистрацию не указана"]];
+    ["Регистрация или контакт организатора",event.registration_url||"Ссылка не указана"]];
   for(const[label,value]of list){
     const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=label;
     if(typeof value==="string"&&/^https?:\/\//.test(value)){
