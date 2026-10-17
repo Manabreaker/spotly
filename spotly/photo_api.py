@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -8,7 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from .api import Change, check_key, conflict
 from .models import Photo
@@ -139,7 +140,18 @@ async def upload_photo(
             await session.flush()
             return await state_of(session, inv, attempt)
     finally:
-        await file.close()
+        try:
+            # Wait for an uncertain commit to finish before checking this
+            # request's own ID. Never remove the winning request's directory.
+            async with request.app.state.sessions() as session, session.begin():
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key}
+                )
+                persisted = await session.get(Photo, photo_id)
+                if persisted is None:
+                    shutil.rmtree(directory)
+        finally:
+            await file.close()
 
 
 @router.put("/{key}/photos/order")
