@@ -23,4 +23,13 @@ if (( free_percent < 10 )); then
 elif (( free_percent < 20 )); then
     printf '%s disk_warning free=%s%%\n' "$(date -u +%FT%TZ)" "$free_percent" >> data/backups/status.log
 fi
+backup_cutoff=$(date -u -d '7 days ago' +%Y%m%dT%H%M%SZ)
+for backup in data/backups/*; do
+    backup_stamp=${backup##*/}
+    if [[ -d "$backup" && ! -L "$backup" &&
+          "$backup_stamp" =~ ^[0-9]{8}T[0-9]{6}Z$ &&
+          "$backup_stamp" < "$backup_cutoff" ]]; then
+        rm -rf -- "$backup"
+    fi
+done
 printf '%s\n' "data/backups/$stamp"
