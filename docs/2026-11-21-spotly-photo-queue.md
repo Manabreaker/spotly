@@ -1,6 +1,6 @@
 # Spotly. Фоновая обработка фотографий
 
-Практика 21.11.2026. Присутствовали — <вписать участников>.
+Практика 21.11.2026. Присутствовали — Гибельгаус Курило.
 
 Код в ветке `main`. [Воркер](https://github.com/Manabreaker/spotly/blob/main/spotly/photo_jobs_worker.py) · [Миграция](https://github.com/Manabreaker/spotly/blob/main/migrations/versions/4e58167eec31_add_photo_jobs.py)
 
