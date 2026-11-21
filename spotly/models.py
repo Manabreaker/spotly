@@ -1,7 +1,18 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -71,6 +82,50 @@ class Photo(Base):
     size: Mapped[int] = mapped_column(Integer)
     position: Mapped[int] = mapped_column(Integer)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class CatalogPublication(Base):
+    __tablename__ = "catalog_publications"
+    event_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("events.id", ondelete="CASCADE"), primary_key=True
+    )
+    city: Mapped[str | None] = mapped_column(String(80))
+    direction: Mapped[str] = mapped_column(String(80))
+    cover_photo_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("photos.id", ondelete="SET NULL")
+    )
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+PENDING_PHOTO_JOBS = ("queued", "processing")
+
+
+class PhotoJob(Base):
+    __tablename__ = "photo_jobs"
+    __table_args__ = (
+        UniqueConstraint("invitation_key", "upload_id"),
+        Index(
+            "ix_photo_jobs_claim",
+            "created_at",
+            "id",
+            postgresql_where=text("status IN ('queued', 'processing')"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    invitation_key: Mapped[str] = mapped_column(String(64))
+    attempt_id: Mapped[str] = mapped_column(String(36), index=True)
+    upload_id: Mapped[str] = mapped_column(String(36))
+    session_id: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(255))
+    original: Mapped[str] = mapped_column(String(300))
+    size: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    claim_token: Mapped[str | None] = mapped_column(String(36))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    process_count: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

@@ -10,8 +10,8 @@ export function recoveryCandidate(local,state){
   if(local?.attempt_id!==state.attempt_id||!local.raw)return null;
   return {raw:local.raw,conflict:local.base_version!==state.version&&!sameRaw(local.raw,state.raw)};
 }
-export function uploadOperation(operations,file){
-  const fingerprint=JSON.stringify([file.name,file.size,file.lastModified,file.type]);
-  if(!operations.has(fingerprint))operations.set(fingerprint,{id:crypto.randomUUID(),file,fingerprint});
+export function uploadOperation(operations,file,attempt){
+  const fingerprint=JSON.stringify([attempt,file.name,file.size,file.lastModified,file.type]);
+  if(!operations.has(fingerprint))operations.set(fingerprint,{id:crypto.randomUUID(),file,fingerprint,attempt});
   const operation=operations.get(fingerprint);operation.file=file;return operation;
 }

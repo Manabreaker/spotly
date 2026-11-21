@@ -20,13 +20,13 @@ services:
       options: {max-size: "10m", max-file: "3"}
   app:
     build: .
-    image: spotly-app:${APP_REVISION:-local}
+    image: &app-image spotly-app:${APP_REVISION:-local}
     restart: unless-stopped
-    environment:
+    environment: &app-environment
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD}@db:5432/spotly
       DATA_DIR: /app/data
       APP_REVISION: ${APP_REVISION:-local}
-    volumes:
+    volumes: &app-volumes
       - ./data/photos:/app/data/photos
     depends_on:
       db:
@@ -37,6 +37,20 @@ services:
       timeout: 6s
       retries: 5
       start_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  photo-worker:
+    image: *app-image
+    pull_policy: never
+    command: ["python", "-m", "spotly.photo_jobs_worker"]
+    init: true
+    restart: unless-stopped
+    environment: *app-environment
+    volumes: *app-volumes
+    depends_on:
+      app:
+        condition: service_healthy
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}

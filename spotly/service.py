@@ -3,7 +3,17 @@ from hashlib import sha256
 
 from sqlalchemy import select, text
 
-from .models import Activity, Attempt, Event, Feedback, Invitation, Photo, uid
+from .models import (
+    PENDING_PHOTO_JOBS,
+    Activity,
+    Attempt,
+    Event,
+    Feedback,
+    Invitation,
+    Photo,
+    PhotoJob,
+    uid,
+)
 
 
 def participant_id(key):
@@ -24,6 +34,16 @@ async def lock_form(session, key):
     return inv, attempt
 
 
+async def pending_photo_jobs(session, attempt_id):
+    return (
+        await session.scalars(
+            select(PhotoJob)
+            .where(PhotoJob.attempt_id == attempt_id, PhotoJob.status.in_(PENDING_PHOTO_JOBS))
+            .order_by(PhotoJob.created_at, PhotoJob.id)
+        )
+    ).all()
+
+
 async def state_of(session, inv, attempt):
     photos = (
         await session.scalars(
@@ -36,6 +56,12 @@ async def state_of(session, inv, attempt):
     final_feedback = await session.scalar(
         select(Feedback.id).where(Feedback.attempt_id == attempt.id, Feedback.kind == "final")
     )
+    last_job = await session.scalar(
+        select(PhotoJob)
+        .where(PhotoJob.attempt_id == attempt.id)
+        .order_by(PhotoJob.created_at.desc(), PhotoJob.id.desc())
+        .limit(1)
+    )
     return dict(
         participant_id=participant_id(inv.key),
         feedback_final=bool(final_feedback),
@@ -47,6 +73,15 @@ async def state_of(session, inv, attempt):
         last_session=inv.last_session,
         event_id=event.id if event else None,
         event=event.details if event else None,
+        last_photo_error=(
+            {"job_id": last_job.id, "name": last_job.name, "error": last_job.error}
+            if last_job is not None and last_job.status == "failed"
+            else None
+        ),
+        pending_photos=[
+            {"job_id": job.id, "name": job.name, "status": job.status}
+            for job in await pending_photo_jobs(session, attempt.id)
+        ],
         photos=[
             dict(
                 id=p.id,

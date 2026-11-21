@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from . import models  # noqa: F401
 from .api import check_key, router
+from .catalog_pages import catalog_router
 from .config import Settings
 from .db import database
 from .photo_api import router as photo_router
@@ -44,9 +45,9 @@ def build_app(settings=None):
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings, app.state.engine, app.state.sessions = settings, engine, sessions
-    app.state.image_semaphore = asyncio.Semaphore(1)
     app.include_router(router)
     app.include_router(photo_router)
+    app.include_router(catalog_router)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     zones = list(COMMON.items()) + [
@@ -81,10 +82,6 @@ def build_app(settings=None):
         if not request.url.path.startswith("/static"):
             response.headers.setdefault("Cache-Control", "no-store")
         return response
-
-    @app.get("/", response_class=HTMLResponse)
-    async def home():
-        return '<html lang="ru"><meta charset="utf-8"><title>Spotly</title><p>Для создания мероприятия откройте вашу персональную ссылку Spotly.</p></html>'
 
     @app.get("/create/{key}", response_class=HTMLResponse)
     async def form(key: str, request: Request):

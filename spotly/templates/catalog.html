@@ -1,0 +1,104 @@
+{% extends "site.html" %}
+{% from "icons.html" import icon %}
+{% block title %}Танцевальная афиша · Spotly{% endblock %}
+{% block head %}
+  <meta name="description" content="Занятия, мастер-классы и другие танцевальные события. Поиск по городу, дате и направлению.">
+  <link rel="stylesheet" href="/static/catalog.css?v=2">
+{% endblock %}
+{% block page %}
+<main id="app" tabindex="-1">
+  <div class="catalog-masthead">
+    <div class="shell masthead-inner">
+      <h1>Танцевальная <span>афиша</span></h1>
+      <p>Занятия, мастер-классы и другие события танцевальной сцены.</p>
+    </div>
+  </div>
+
+  <div class="shell catalog-main">
+    <form class="catalog-filters" method="get" action="/catalog" role="search" aria-label="Фильтры афиши">
+      <div class="filter-search">
+        <label for="q">Название</label>
+        <div class="search-control">
+          {{ icon("search") }}
+          <input id="q" name="q" type="search" maxlength="150" value="{{ filters.q }}" placeholder="Найти событие">
+        </div>
+      </div>
+      <div class="filter-date">
+        <label for="date">Дата</label>
+        <input id="date" name="date" type="date" value="{{ filters.date }}">
+      </div>
+      <div class="filter-city">
+        <label for="city">Город</label>
+        <div class="select-control">
+          <select id="city" name="city">
+            <option value="">Все города</option>
+            {% for city in cities %}
+            <option value="{{ city }}"{% if city == filters.city %} selected{% endif %}>{{ city }}</option>
+            {% endfor %}
+          </select>
+          {{ icon("chevron-down") }}
+        </div>
+      </div>
+      <div class="filter-direction">
+        <label for="direction">Направление</label>
+        <div class="select-control">
+          <select id="direction" name="direction">
+            <option value="">Любое</option>
+            {% for direction in directions %}
+            <option value="{{ direction }}"{% if direction == filters.direction %} selected{% endif %}>{{ direction }}</option>
+            {% endfor %}
+          </select>
+          {{ icon("chevron-down") }}
+        </div>
+      </div>
+      <button class="primary filter-submit" type="submit">Найти {{ icon("arrow-right") }}</button>
+    </form>
+
+    <section class="event-board" aria-labelledby="events-title">
+      <div class="board-heading">
+        <h2 id="events-title">
+          {%- if all_ended -%}Архив событий
+          {%- elif events -%}События
+          {%- elif has_filters -%}Событий не найдено
+          {%- else -%}В афише пока нет событий
+          {%- endif -%}
+        </h2>
+        {% if has_filters %}<a class="reset-link" href="/catalog">Сбросить фильтры</a>{% endif %}
+      </div>
+      {% if events %}
+      <ul class="event-grid" role="list">
+        {% for event in events %}
+        <li>
+          <a class="event-ticket{% if not event.cover %} ticket-without-cover{% endif %}" href="{{ event.url }}" aria-labelledby="event-title-{{ loop.index }}" aria-describedby="event-date-{{ loop.index }} event-meta-{{ loop.index }} event-price-{{ loop.index }}">
+            {% if event.cover %}
+            <div class="ticket-art">
+              <img src="{{ event.cover }}" alt="" decoding="async"{% if loop.first %} fetchpriority="high"{% else %} loading="lazy"{% endif %}>
+            </div>
+            {% endif %}
+            <div class="ticket-body">
+              <time class="ticket-date" id="event-date-{{ loop.index }}" datetime="{{ event.starts_at }}">
+                <span class="sr-only">{{ event.starts_text }}</span>
+                <span class="ticket-day" aria-hidden="true">{{ event.day }}</span>
+                <span class="ticket-month" aria-hidden="true">{{ event.month }} {{ event.year }}</span>
+                <span class="ticket-time" aria-hidden="true">{{ event.clock }}</span>
+              </time>
+              <div class="ticket-info">
+                <p class="ticket-meta" id="event-meta-{{ loop.index }}">{{ event.place }} · {{ event.direction }}{% if event.ended and not all_ended %} · Прошло{% endif %}</p>
+                <h3 id="event-title-{{ loop.index }}">{{ event.title }}</h3>
+                <div class="ticket-footer">
+                  <span id="event-price-{{ loop.index }}">{{ event.price }}</span>
+                  {{ icon("arrow-right") }}
+                </div>
+              </div>
+            </div>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif has_filters %}
+      <p class="empty-message">Попробуйте изменить параметры поиска.</p>
+      {% endif %}
+    </section>
+  </div>
+</main>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "site.html" %}
+{% from "icons.html" import icon %}
+{% block title %}{{ event.title }} · Spotly{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="/static/catalog.css?v=2">
+{% endblock %}
+{% block page %}
+<main class="shell detail-main" id="app" tabindex="-1">
+  <a class="back-link" href="/catalog">{{ icon("arrow-left") }} К афише</a>
+  <article class="event-detail{% if not event.cover %} event-detail-without-cover{% endif %}">
+    <header class="detail-heading">
+      <p>{{ event.place }} · {{ event.direction }}</p>
+      <h1>{{ event.title }}</h1>
+      {% if event.ended %}<p class="event-status">Событие прошло</p>{% endif %}
+    </header>
+    {% if event.cover %}
+    <figure class="detail-art">
+      <img src="{{ event.cover }}" alt="Постер события «{{ event.title }}»" fetchpriority="high">
+    </figure>
+    {% endif %}
+    <div class="detail-info">
+      <dl class="event-facts">
+        <div class="fact-wide">
+          <dt>Начало</dt>
+          <dd><time datetime="{{ event.starts_at }}">{{ event.starts_text }}</time> <span class="fact-timezone">{{ event.timezone }}</span></dd>
+        </div>
+        <div>
+          <dt>Длительность</dt>
+          <dd>{{ event.duration }} мин</dd>
+        </div>
+        <div>
+          <dt>Формат</dt>
+          <dd>{{ event.format }}</dd>
+        </div>
+        {% if event.address %}
+        <div class="fact-wide">
+          <dt>Адрес</dt>
+          <dd>{{ event.address }}</dd>
+        </div>
+        {% endif %}
+        <div>
+          <dt>Цена</dt>
+          <dd>{{ event.price }}</dd>
+        </div>
+        {% if event.capacity is not none %}
+        <div>
+          <dt>Мест</dt>
+          <dd>{{ event.capacity }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+      <a class="primary organizer-link" href="{{ event.registration_url }}" rel="noreferrer">Перейти к организатору {{ icon("arrow-up-right") }}</a>
+      <section class="detail-description">
+        <h2>О событии</h2>
+        <p>{{ event.description }}</p>
+      </section>
+    </div>
+  </article>
+</main>
+{% endblock %}

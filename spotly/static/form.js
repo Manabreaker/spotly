@@ -1,6 +1,6 @@
 import {Telemetry} from "./telemetry.js";
-import {photoConflicts,recoveryCandidate,uploadOperation} from "./draft-state.js";
-const uploadOperations=new Map();
+import {photoConflicts,recoveryCandidate,uploadOperation} from "./draft-state.js?v=2";
+const uploadOperations=new Map(),trackedPhotoJobs=new Set();
 const $=id=>document.getElementById(id), form=$("event-form"), key=$("app").dataset.key;
 const base="/api/forms/"+encodeURIComponent(key), localKey="spotly:draft:"+key;
 const fields=["title","description","date","time","timezone","hours","minutes","format","address",
@@ -183,8 +183,8 @@ async function saveNow(){
         dirty=true;
         if(error.status===409&&error.data.state){
           const next=error.data.state;
-          if(next.attempt_id===state.attempt_id&&next.status==="active"&&next.last_session===tm.session&&retries++<2){
-            state.version=next.version;continue;
+          if(next.status==="active"&&!photoConflicts(state,next,tm.session)&&retries++<2){
+            adopt(next);continue;
           }
           showConflict(next);return;
         }
@@ -199,6 +199,9 @@ async function saveNow(){
 function showForm(values){
   $("restore").hidden=true;form.hidden=false;paused=false;blocked=false;
   fill(values);tm.start();drawPhotos();
+  const failure=state.last_photo_error;
+  $("photo-error").textContent=failure?failure.name+": "+failure.error:"";
+  resumePhotoUploads();
   savedLabel(state.saved_at?"Сохранено":"Черновик сохраняется автоматически");
 }
 function drawPhotos(readonly=false,target=$("photos")){
@@ -233,40 +236,76 @@ function orderPhoto(from,to){
   return photoMutation("/photos/order","PUT",{photo_ids:ids});
 }
 function deletePhoto(id){tm.emit("photo_remove_clicked",null,null,{photo_id:id});return photoMutation("/photos/"+id,"DELETE");}
+function resumePhotoUploads(){
+  for(const job of state.pending_photos??[])queueUpload({job,attempt:state.attempt_id});
+}
+async function waitForPhoto(operation,name){
+  while(operation.job.status==="queued"||operation.job.status==="processing"){
+    const status=operation.job.status==="queued"?"В очереди":"Обрабатываем";
+    $("upload-status").textContent=status+" · "+name;
+    await new Promise(resolve=>setTimeout(resolve,1000));
+    if(blocked||state.attempt_id!==operation.attempt)return false;
+    operation.job=await request("/photo-jobs/"+operation.job.job_id);
+  }
+  if(operation.job.status==="failed"){
+    const error=new Error(operation.job.error||"Не удалось обработать фотографию");
+    error.status=422;throw error;
+  }
+  return true;
+}
 function queueUpload(operation){
+  if(operation.job){
+    if(trackedPhotoJobs.has(operation.job.job_id))return;
+    trackedPhotoJobs.add(operation.job.job_id);
+  }
+  const name=operation.file?.name??operation.job.name;
   uploadCount++;$("submit-button").disabled=true;
   uploadChain=uploadChain.then(async()=>{
+    if(state.attempt_id!==operation.attempt)return;
     if(blocked){$("photo-error").textContent="Сначала выберите версию черновика";return;}
-    $("upload-status").textContent="Загружаем и обрабатываем "+operation.file.name+"…";
     $("photo-error").textContent="";
-    const startedAt=performance.now(),data=new FormData();
-    data.append("file",operation.file);data.append("attempt_id",operation.attempt);
-    data.append("session_id",tm.session);data.append("upload_id",operation.id);
+    const startedAt=performance.now();
     try{
-      const next=await request("/photos","POST",data,true);
+      if(!operation.job){
+        $("upload-status").textContent="Загружаем "+name+"…";
+        const data=new FormData();
+        data.append("file",operation.file);data.append("attempt_id",operation.attempt);
+        data.append("session_id",tm.session);data.append("upload_id",operation.id);
+        operation.job=await request("/photos","POST",data,true);
+        trackedPhotoJobs.add(operation.job.job_id);
+      }
+      if(!await waitForPhoto(operation,name))return;
+      const next=await request("");
+      if(state.attempt_id!==operation.attempt)return;
       uploadOperations.delete(operation.fingerprint);adoptPhoto(next);
-      tm.emit("photo_upload_success","photos",null,{name:operation.file.name,duration_ms:Math.round(performance.now()-startedAt)});
+      tm.emit("photo_upload_success","photos",null,{name,duration_ms:Math.round(performance.now()-startedAt)});
     }catch(error){
-      tm.emit("photo_error","photos",null,{name:operation.file.name,status:error.status||"network"});
+      if(state.attempt_id!==operation.attempt)return;
+      tm.emit("photo_error","photos",null,{name,status:error.status||"network"});
       if(error.status===409&&error.data.state){showConflict(error.data.state);return;}
-      // An uncertain response may already have committed. Reconcile before retrying.
       if(!error.status||error.status>=500){
-        try{
-          const next=await request("");
-          if(next.photos.some(p=>p.upload_id===operation.id)){
-            uploadOperations.delete(operation.fingerprint);adoptPhoto(next);return;
-          }
-        }catch{}
-        $("photo-error").textContent=operation.file.name+": результат загрузки пока неизвестен. ";
+        if(!operation.job){
+          // A lost upload response can follow a committed enqueue or completed job.
+          try{
+            const next=await request("");
+            if(next.photos.some(p=>p.upload_id===operation.id)){
+              uploadOperations.delete(operation.fingerprint);adoptPhoto(next);return;
+            }
+          }catch{}
+        }
+        $("photo-error").textContent=name+": результат загрузки пока неизвестен. ";
         const retry=document.createElement("button");retry.type="button";retry.className="secondary";
-        retry.textContent="Повторить загрузку";retry.onclick=()=>{retry.disabled=true;queueUpload(operation);};
+        retry.textContent=operation.job?"Проверить статус":"Повторить загрузку";
+        retry.onclick=()=>{retry.disabled=true;queueUpload(operation);};
         $("photo-error").append(retry);
       }else{
         uploadOperations.delete(operation.fingerprint);
-        $("photo-error").textContent=operation.file.name+": "+error.message;
+        $("photo-error").textContent=name+": "+error.message;
       }
     }
   }).finally(()=>{
+    if(operation.job)trackedPhotoJobs.delete(operation.job.job_id);
+    if(state.attempt_id!==operation.attempt)uploadOperations.delete(operation.fingerprint);
     uploadCount--;$("submit-button").disabled=uploadCount>0||blocked||submitting;
     if(!uploadCount)$("upload-status").textContent=state.photos.length?"Загружено фотографий: "+state.photos.length:"";
   });
@@ -276,7 +315,7 @@ function uploadFiles(files){
     tm.emit("photo_selected","photos",null,{name:file.name,size:file.size,type:file.type});
     if(file.size>30000000){$("photo-error").textContent=file.name+": файл больше 30 МБ";
       tm.emit("photo_error","photos",null,{name:file.name,code:"file_size"});continue;}
-    const operation=uploadOperation(uploadOperations,file);operation.attempt=state.attempt_id;
+    const operation=uploadOperation(uploadOperations,file,state.attempt_id);
     queueUpload(operation);
   }
   $("photo-input").value="";
@@ -333,10 +372,14 @@ async function submit(event){
     if(error.status===422&&error.data.errors){
       if(error.data.state)adopt(error.data.state);
       renderErrors(error.data.errors,true);
+    }else if(error.status===409&&error.data.code==="photos_pending"){
+      if(adoptPhoto(error.data.state)){
+        $("photo-error").textContent=error.message;resumePhotoUploads();
+      }
     }else if(error.status===409&&error.data.state)showConflict(error.data.state);
     else{$("error-summary").textContent=error.message;$("error-summary").hidden=false;}
     tm.emit("submit_error",null,null,{status:error.status||"network"});
-  }finally{submitting=false;$("submit-button").disabled=blocked;$("submit-button").innerHTML='Создать мероприятие <span aria-hidden="true">↗</span>';}
+  }finally{submitting=false;$("submit-button").disabled=blocked||uploadCount>0;$("submit-button").innerHTML='Создать мероприятие <span aria-hidden="true">↗</span>';}
 }
 const feedbackIds={};
 async function feedback(kind){
@@ -402,7 +445,7 @@ function wire(){
     try{
       localStorage.setItem(localKey+":conflict:"+Date.now(),localStorage.getItem(localKey)||"");
       state=await request("");tm.attempt=state.attempt_id;$("conflict").hidden=true;dirty=false;
-      if(state.status==="completed")showSuccess();else{showForm(state.raw);$("submit-button").disabled=false;}
+      if(state.status==="completed")showSuccess();else{showForm(state.raw);$("submit-button").disabled=uploadCount>0;}
     }catch{savedLabel("Не удалось загрузить актуальную версию",true);}
   };
   $("difficulty").onclick=()=>{tm.emit("difficulty_opened");$("send-difficulty").disabled=false;$("difficulty-error").textContent="";$("difficulty-dialog").showModal();};

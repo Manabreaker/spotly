@@ -14,5 +14,13 @@ test('local edits remain recoverable after an unacknowledged save',()=>{
 });
 test('uncertain upload retries keep the same operation identifier',()=>{
   const ops=new Map(),file={name:'photo.heic',size:100,lastModified:500,type:'image/heic'};
-  assert.equal(uploadOperation(ops,file).id,uploadOperation(ops,{...file}).id);
+  assert.equal(uploadOperation(ops,file,'a').id,uploadOperation(ops,{...file},'a').id);
+});
+test('the same file gets a new upload identifier after restarting the draft',()=>{
+  const ops=new Map(),file={name:'photo.heic',size:100,lastModified:500,type:'image/heic'};
+  const first=uploadOperation(ops,file,'old-attempt');
+  const next=uploadOperation(ops,file,'new-attempt');
+  assert.notEqual(first.id,next.id);
+  assert.equal(first.attempt,'old-attempt');
+  assert.equal(next.attempt,'new-attempt');
 });

@@ -9,7 +9,15 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from .models import Activity, Attempt, Event, Feedback, uid
-from .service import lock_form, mark_changed, participant_id, record, stale, state_of
+from .service import (
+    lock_form,
+    mark_changed,
+    participant_id,
+    pending_photo_jobs,
+    record,
+    stale,
+    state_of,
+)
 from .validation import validate_event
 
 router = APIRouter(prefix="/api/forms")
@@ -170,6 +178,15 @@ async def submit(key: str, body: Change, request: Request):
             return await state_of(session, inv, attempt)
         if stale(inv, attempt, body):
             return await conflict(session, inv, attempt)
+        if await pending_photo_jobs(session, attempt.id):
+            return JSONResponse(
+                {
+                    "code": "photos_pending",
+                    "message": "Дождитесь завершения обработки фотографий",
+                    "state": await state_of(session, inv, attempt),
+                },
+                status_code=409,
+            )
         attempt.raw = body.raw
         mark_changed(inv, attempt, body.session_id)
         data, errors = validate_event(body.raw)
